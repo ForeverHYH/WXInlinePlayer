@@ -72,7 +72,8 @@ class WXInlinePlayer extends EventEmitter {
     bufferingTime = 3e3,
     cacheSegmentCount = 128,
     /*cacheInMemory = false,*/
-    customLoader = null
+    customLoader = null,
+    isRotateOpen = false
   }) {
     super();
     this.url = url;
@@ -95,6 +96,7 @@ class WXInlinePlayer extends EventEmitter {
     this.isInitlize = false;
     this.isEnd = false;
     this.state = 'created';
+    this.isRotateOpen = isRotateOpen;
 
     if (((hasVideo && !hasAudio) || Util.isWeChat()) && this.autoplay) {
       this._initlize();
@@ -307,7 +309,7 @@ class WXInlinePlayer extends EventEmitter {
 
   _onFrameHandler({ width, height, data }) {
     if (this.drawer) {
-      this.drawer.drawNextOutputPicture(width, height, data);
+      this.drawer.drawNextOutputPicture(width, height, data, width > height && this.isRotateOpen);
     }
   }
 

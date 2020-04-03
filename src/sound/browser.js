@@ -106,8 +106,16 @@ class BrowserSound extends EventEmitter {
       const audioSrc = this.context.createBufferSource();
       audioSrc.onended = this._onAudioBufferEnded.bind(this);
       if (!this.playStartedAt) {
+        // AudioContext.baseLatency只读
+        // 是AudioContext接口的返回一个double值
+        // 该值表示AudioContext将音频从AudioDestinationNode传递到音频子系统所引起的处理延迟的秒数
+        // AudioContext.sampleRate 只读
+        // 返回用浮点数表示的采样率，也就是每秒的采样数，同一个AudioContext中的所有节点采样率相同，所以不支持采样率转换
         const { currentTime, baseLatency, sampleRate } = this.context;
-        const startDelay = duration + (baseLatency || 128 / sampleRate);
+        // console.log("baseLatency and sampleRate is: "+baseLatency+" & "+sampleRate);
+        const startDelay = duration + ( 128 / sampleRate);
+        // const startDelay = (baseLatency || 128 / sampleRate);
+        // const startDelay = duration;
         this.playStartedAt = currentTime + startDelay;
       }
 
@@ -115,7 +123,7 @@ class BrowserSound extends EventEmitter {
       try {
         audioSrc.connect(this.gainNode);
         audioSrc.start(
-          this.totalTimeScheduled + this.playStartedAt,
+          this.totalTimeScheduled + this.playStartedAt - ( 128 / this.context.sampleRate) ,
           !i ? offset / 1000 - timestamp : 0
         );
       } catch (e) {}
@@ -216,21 +224,30 @@ class BrowserSound extends EventEmitter {
   }
 
   _onDecodeSuccess(audioBuffer) {
+    // audioBuffer是库解码出来的音频buffer自带有duration,sampleRate,numberOfChannels
+
+    // 创建一个 AudioBufferSourceNode 对象,
+    // 可以通过AudioBuffer对象来播放和处理包含在内的音频数据.
+    // AudioBuffer可以通过AudioContext.createBuffer方法创建或者使用AudioContext.decodeAudioData方法解码音轨来创建
     const audioSrc = this.context.createBufferSource();
     audioSrc.onended = this._onAudioBufferEnded.bind(this);
 
     if (!this.playStartedAt) {
       const { duration } = audioBuffer;
       const { currentTime, baseLatency, sampleRate } = this.context;
-      const startDelay = duration + (baseLatency || 128 / sampleRate);
+      // const startDelay = duration + (baseLatency || 128 / sampleRate);
+      const startDelay = duration + ( 128 / sampleRate);
+      // const startDelay =  (baseLatency || 128 / sampleRate);
       this.playStartedAt = currentTime + startDelay;
     }
 
+    // 一个 AudioBufferSourceNode 只能被播放一次
+    // 也就是说，每次调用 start() 之后，如果还想再播放一遍同样的声音，那么就需要再创建一个 AudioBufferSourceNode。
     audioSrc.buffer = audioBuffer;
     if (this.state == 'running') {
       try {
         audioSrc.connect(this.gainNode);
-        audioSrc.start(this.totalTimeScheduled + this.playStartedAt);
+        audioSrc.start(this.totalTimeScheduled + this.playStartedAt -  (128 / this.context.sampleRate) );
       } catch (e) {}
     }
 

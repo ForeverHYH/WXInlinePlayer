@@ -75,6 +75,8 @@ class Processor extends EventEmitter {
     this.frames = [];
     this.audios = [];
     this.currentTime = 0;
+    this.audioTime = 0;
+    this.videoTime = 0;
     this.bufferingIndex = -1;
     this.minBufferingTime = preloadTime;
     this.bufferingTime = bufferingTime;
@@ -83,12 +85,18 @@ class Processor extends EventEmitter {
     this.sound = new Sound({ volume, muted });
     this.codec = new H264Codec();
 
-    this.tickHandler = this._onTickHandler.bind(this);
+    this.tickHandler = this._onTickHandler.bind(this); // ticker里面设置了timeout来循环执行handler的内容
     this.ticker.add(this.tickHandler);
     this.codec.onmessage = this._onCodecMsgHandler.bind(this);
   }
 
   getAvaiableDuration() {
+    // 获取当前视频的持续时间
+    // 音频通过this.sound.getAvaiableDuration获取，其中Duration为每个声音片段的持续时间
+    // this.duration += audioBuffer.duration;
+    // 视频通过获取最后一帧的时间戳得到
+    // 在FFmpeg中，时间基(time_base)是时间戳(timestamp)的单位，时间戳值乘以时间基，可以得到实际的时刻值(以秒等为单位)。
+    // 例如，如果一个视频帧的dts是40，pts是160，其time_base是1/1000，那么可以计算出此视频帧的解码时刻是40毫秒(40/1000)，显示时刻是160毫秒(160/1000)
     if (this.hasAudio) {
       if (this.sound) {
         return this.sound.getAvaiableDuration() * 1000;
@@ -105,6 +113,9 @@ class Processor extends EventEmitter {
   }
 
   getCurrentTime() {
+    // AudioContext.currentTime
+    // 以双精度浮点型数字返回硬件调用的秒数，AudioContext一创建就从0开始走，无法停掉、暂停或者重置。
+    // this.context.currentTime - this.playStartedAt + this.skimmedTime
     if (this.hasAudio) {
       return this.sound ? this.sound.getCurrentTime() * 1000 : 0.0;
     } else if (this.hasVideo) {
@@ -209,13 +220,13 @@ class Processor extends EventEmitter {
     if (this.hasAudio && this.hasVideo) {
       let diff = 0;
       let lastIndex = 0;
-      this.currentTime = this.getCurrentTime();
+      this.currentTime = this.getCurrentTime(); // 获取音频时间戳
       if (this.frames.length) {
         lastIndex = this.frames.length - 1;
         const { timestamp: lastFrameTimestamp } = this.frames[lastIndex];
         if (this.bufferingIndex == -1) {
-          this.bufferingIndex = lastIndex;
-          diff = lastFrameTimestamp - this.currentTime;
+          this.bufferingIndex = lastIndex;  // 拿到最后一帧的index
+          diff = lastFrameTimestamp - this.currentTime;  // 最后一帧的时间戳-音频的时间戳，得到缓冲区的时间差
         } else if (this.frames[this.bufferingIndex]) {
           const { timestamp } = this.frames[this.bufferingIndex];
           diff = lastFrameTimestamp - timestamp;
@@ -226,6 +237,8 @@ class Processor extends EventEmitter {
         !this.frames.length ||
         (!this.isEnded && diff && diff < this.minBufferingTime)
       ) {
+        // 如果缓冲区间比较短，开始缓存，并暂停音频
+        console.log("缓冲区间不足，开始缓存，并暂停音频");
         if (this.state != 'buffering') {
           this.emit('buffering');
         }
@@ -254,15 +267,34 @@ class Processor extends EventEmitter {
         this.ticker.setFps(this.framerate);
       }
 
+      // 一次解析一批动画帧，推到帧列表中，以及一个音频片段audionodebuffer
+      // 在这一批动画帧里面一帧一帧遍历，只要满足当前帧的时间戳和音频的时间戳的差值小于阈值，就渲染当前帧，并从帧队列中剔除之前的帧，其他的帧不渲染
+      // let minVal = 10;
+      // let minIndex = -1;
       for (let i = 0; i < this.frames.length; i++) {
-        const { timestamp } = this.frames[i];
-        const diff = this.currentTime - timestamp;
-        if (Math.abs(diff) <= 25) {
+        // const { timestamp } = this.frames[i];
+        const diffVal = Math.abs(this.currentTime - this.frames[i].timestamp);
+        if (diffVal <= 25) {
+          // console.log("diff is "+diff); // 音频的时间戳-帧的时间戳，如果小于0表示音频比视频慢，如果大于0表示音频比视频快
           this.emit('frame', this.frames[i]);
           this.frames.splice(0, i + 1);
           break;
         }
       }
+
+      // for (let i = 0; i < this.frames.length; i++) {
+      //   const diffVal = Math.abs(this.currentTime - this.frames[i].timestamp);
+      //   if(diffVal<minVal){
+      //     minVal = diffVal;
+      //     minIndex = i;
+      //   }
+      // }
+      // if(minIndex!==-1){
+      //   this.audioTime = this.currentTime;
+      //   this.videoTime = this.frames[minIndex].timestamp;
+      //   this.emit('frame', this.frames[minIndex]);
+      //   this.frames.splice(0, minIndex + 1);
+      // }
     } else if (this.hasAudio) {
       const duration = this.sound.getAvaiableDuration() * 1000;
       const bufferTime = this.bufferingTime;

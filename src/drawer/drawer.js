@@ -92,7 +92,7 @@ class Drawer {
     return !!gl;
   }
 
-  drawNextOutputPicture(width, height, data) {
+  drawNextOutputPicture(width, height, data, isRotate) {
     const { yTextureRef, uTextureRef, vTextureRef } = this;
     const gl = this.contextGL;
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
@@ -151,7 +151,32 @@ class Drawer {
       crData
     );
 
+    const program = this.shaderProgram;
+    let transformUniformLoc = gl.getUniformLocation(program, 'TransformationMatrix');
+    let xf = this.getMatrix4(width / 2,height / 2, isRotate);
+    gl.uniformMatrix4fv(transformUniformLoc,false,xf);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  getMatrix4(x,y, isRotate) {
+    let cosA = Math.cos(90*Math.PI/180);
+    let sinA = Math.sin(90*Math.PI/180);
+    if(isRotate){
+      return new Float32Array([
+        cosA, -sinA,  0.0,  0,
+        sinA,  cosA,  0.0,  0,
+        0.0,  0.0,  1.0,  0.0,
+        0.0,  0.0,  0.0,  1.0,
+      ]);
+    }else{
+      return new Float32Array([
+        1.0,  0.0,  0.0,  0,
+        0.0, 1.0,  0.0,  0,
+        0.0,  0.0,  1.0,  0.0,
+        0.0,  0.0,  0.0,  1.0,
+      ]);
+    }
+
   }
 
   destroy() {
@@ -201,8 +226,9 @@ class Drawer {
     attribute vec4 vertexPos;
     attribute vec4 texturePos;
     varying vec2 textureCoord;
+    uniform highp mat4 TransformationMatrix;
     void main(){
-        gl_Position = vertexPos; 
+        gl_Position = TransformationMatrix * vertexPos; 
         textureCoord = texturePos.xy;
     }
     `;
